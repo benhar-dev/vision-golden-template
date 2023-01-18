@@ -1,0 +1,118 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{e7b4249b-701a-41a5-9112-3c8ba79bc23a}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	
+	// settings	
+	positiveThreshold : LREAL := 10;
+	negativeThreshold : LREAL := -10;
+	
+	// variables
+	readTestImage: FB_VN_ReadImage;
+	readTemplateImage: FB_VN_ReadImage;
+	result : HRESULT := S_OK;	
+	testImage : ITcVnImage; 
+	templateImage : ITcVnImage; 
+	testImageAsMonochrome : ITcVnImage;
+	templateAsMonochrome : ITcVnImage;
+	testImageAsMonochromeSigned16 : ITcVnImage;
+	templateImageAsMonochromeSigned16 : ITcVnImage;
+	subtractedImage : ITcVnImage;
+	positiveThresholdImage : ITcVnImage;
+	negativeThresholdImage : ITcVnImage;
+	positiveThresholdImageUSINT : ITcVnImage;
+	negativeThresholdImageUSINT : ITcVnImage;
+	positiveScore : ULINT;
+	negativeScore : ULINT;
+	score : ULINT;
+	templateWidth : UDINT;
+	templateHeight : UDINT;
+	resultImage : ITcVnImage;
+	colorBlack : TcVnVector4_LREAL := [0, 0, 0, 255];
+	displayTestImage: ITcVnDisplayableImage;
+	displayTemplateImage: ITcVnDisplayableImage;
+	displayResultImage: ITcVnDisplayableImage;
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// -----------------------------------------------------------------------------------------
+// Get the images
+// 
+// The code below uses FB_VN_ReadImage to load images for this example.
+// It can only progress to the next stage once both function blocks have
+// returned an image and neither are busy or errored
+// -----------------------------------------------------------------------------------------
+
+readTestImage(
+    sFilePath   :=  'C:\temp\quality-image.png', 
+    ipDestImage :=  testImage,
+    bRead       :=  TRUE,
+    nTimeout    :=  T#5S
+);
+
+readTemplateImage(
+    sFilePath   :=  'C:\temp\quality-template.png', 
+    ipDestImage :=  templateImage,
+    bRead       :=  TRUE,
+    nTimeout    :=  T#5S
+);
+
+IF readTestImage.bBusy OR readTestImage.bError OR testImage = 0 THEN
+    RETURN;
+END_IF
+
+IF readTemplateImage.bBusy OR readTemplateImage.bError OR templateImage = 0 THEN
+    RETURN;
+END_IF
+
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// Golden Template
+// This code block compares a "test image" to a "template image" and produces a score that is the sum of the number of non-zero pixels in two binary images.
+// The steps include:
+// 1. Converting the color space of "test image" and "template image" to grayscale.
+// 2. Converting the "test image" and "template image" to signed 16-bit integers.
+// 3. Subtracting the "template image" from the "test image" to create a "subtracted image".
+// 4. Thresholding the "subtracted image" to create two binary images: one for pixels above a positive threshold and another for pixels below a negative threshold.
+// 5. Converting the two binary images to unsigned integers.
+// 6. Counting the number of non-zero pixels in each binary image.
+// 7. Adding the number of non-zero pixels from the positive and negative threshold images to produce a final score.
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+result := F_VN_ConvertColorSpace(testImage,testImageAsMonochrome,TCVN_CST_RGB_TO_GRAY,result);
+result := F_VN_ConvertColorSpace(templateImage,templateAsMonochrome,TCVN_CST_RGB_TO_GRAY,result);
+result := F_VN_ConvertElementType(testImageAsMonochrome,testImageAsMonochromeSigned16,TCVN_ET_INT,result);
+result := F_VN_ConvertElementType(templateAsMonochrome,templateImageAsMonochromeSigned16,TCVN_ET_INT,result);
+result := F_VN_SubtractImages(testImageAsMonochromeSigned16,templateImageAsMonochromeSigned16,subtractedImage,result);
+result := F_VN_Threshold(subtractedImage,positiveThresholdImage,positiveThreshold,255,TCVN_TT_BINARY,result);
+result := F_VN_Threshold(subtractedImage,negativeThresholdImage,negativeThreshold,255,TCVN_TT_BINARY_INV,result);
+result := F_VN_ConvertElementType(positiveThresholdImage,positiveThresholdImageUSINT,TCVN_ET_USINT,result);
+result := F_VN_ConvertElementType(negativeThresholdImage,negativeThresholdImageUSINT,TCVN_ET_USINT,result);
+result := F_VN_CountNonZeroPixels(positiveThresholdImageUSINT,positiveScore,result);
+result := F_VN_CountNonZeroPixels(negativeThresholdImageUSINT,negativeScore,result);
+
+// low score = good match, high score = bad match
+score := positiveScore + negativeScore;
+
+// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// Display the result
+//
+// the code below is not required for the golden template, but is used to show a nice output of the result.
+//
+// The code performs the following operations:
+// 1. Retrieves the width and height of the "templateImage" and stores them in "templateWidth" and "templateHeight" variables.
+// 2. Creates an image "resultImage" with the same width and height as the "templateImage", with a data type of unsigned integer and 3 channels (colorBlack).
+// 3. Sets the first channel of the "resultImage" as the "positiveThresholdImageUSINT" and the second channel as the "negativeThresholdImageUSINT".
+// 4. Transforms "testImage", "templateImage" and "resultImage" into displayable images.
+// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+templateImage.GetWidth(templateWidth);
+templateImage.GetHeight(templateHeight);
+result := F_VN_CreateImageAndSetPixels(resultImage,templateWidth,templateHeight,TCVN_ET_USINT,3,colorBlack,result);
+result := F_VN_SetImageChannel(positiveThresholdImageUSINT,resultImage,0,0,result);
+result := F_VN_SetImageChannel(negativeThresholdImageUSINT,resultImage,0,1,result);
+result := F_VN_TransformIntoDisplayableImage(testImage, displayTestImage, S_OK);
+result := F_VN_TransformIntoDisplayableImage(templateImage, displayTemplateImage, S_OK);
+result := F_VN_TransformIntoDisplayableImage(resultImage, displayResultImage, S_OK);]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>
