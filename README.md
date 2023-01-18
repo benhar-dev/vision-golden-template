@@ -29,6 +29,7 @@ This code can be useful for tasks such as image matching, object recognition, an
 ![image](./docs/images/Screenshot.png)
 
 ## Code Snippets
+Only code related to Golden Template is included below.  For the full code example please see the TwinCAT project.
 
 ```
 PROGRAM MAIN
